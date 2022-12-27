@@ -9,6 +9,10 @@
 
 void error(char *);
 int create_socket(int,struct hostent *);
+int open_data_socket(int,struct hostent *);
+void list_folder(int,struct hostent *);
+void get_file(int,struct hostent *,char *);
+void create_file(char *,char *);
 
 int main(int argc, char *argv[])
 {
@@ -31,17 +35,17 @@ int main(int argc, char *argv[])
 		//by a read/write command
 		int n;
 
-		char response_220[50];
-		char response_331[50];
-		char response_230[50];
-		char response_227[50];
+		char response_220[60];
+		char response_331[60];
+		char response_230[60];
+		char response_227[60];
 
 		bzero(response_220,sizeof(response_220));
 		bzero(response_331,sizeof(response_331));
 		bzero(response_230,sizeof(response_230));
 		bzero(response_227,sizeof(response_227));
 
-		if ((n = read(socket_file_descriptor, response_220, 50)) < 0)
+		if ((n = read(socket_file_descriptor, response_220, 60)) < 0)
 			error("did not receive any data");
 		printf("%s\n",response_220);
 		
@@ -53,7 +57,7 @@ int main(int argc, char *argv[])
 			if ((n = write(socket_file_descriptor, username, strlen(username))) < 0)
 				error("did not send any data");
 
-			if ((n = read(socket_file_descriptor, response_331, 50)) < 0)
+			if ((n = read(socket_file_descriptor, response_331, 60)) < 0)
 				error("did not receive any data");
 			printf("%s\n", response_331);
 
@@ -65,68 +69,19 @@ int main(int argc, char *argv[])
 				if ((n = write(socket_file_descriptor, password, strlen(password))) < 0)
 					error("did not send any data");
 
-				if ((n = read(socket_file_descriptor, response_230, 50)) < 0)
+				if ((n = read(socket_file_descriptor, response_230, 60)) < 0)
 					error("did not receive any data");
 				printf("%s\n", response_230);
 
 				if(strncmp(response_230,"230",3)==0)
 				{
-					char pasv[] = "PASV \r\n";
-					if ((n = write(socket_file_descriptor, pasv, strlen(pasv))) < 0)
-						error("did not send any data");
+					list_folder(socket_file_descriptor,server);
+					printf("Enter file to retrieve\n");
 
-					
-					if ((n = read(socket_file_descriptor,response_227, 50)) < 0)
-						error("did not receive any data");
-					printf("%s\n", response_227);
+					char filename[100];
+					scanf("%s",filename);
 
-
-					//227 Entering passive mode (192,168,1,66,237,109).
-					//above is a sample 227 response
-					//we are only interested in the last two numbers which give us the port to connect to
-					//in this case 237 and 109(stored in num5 and num6 respectively)
-					int num5;
-					int num6;
-					char s1[20];
-					int ptr;
-
-					sscanf(response_227,"%d %s %s %s (%d,%d,%d,%d,%d,%d)",&ptr,s1,s1,s1,&ptr,&ptr,&ptr,&ptr,&num5,&num6);
-					int extracted_port = (num5 * 256)+num6;
-
-					int data_socket;
-					if ((data_socket = create_socket(extracted_port,server)) < 0)
-						error("could not create socket");
-
-					char ls[]="RETR hello.txt\r\n";
-					// char ls[]="LIST \r\n";
-					if((n = write(socket_file_descriptor,ls,strlen(ls))) < 0)
-						error("did send any data");
-					
-					char connection2[1000];
-					bzero(connection2,sizeof(connection2));
-					if ((n = read(socket_file_descriptor, connection2, 1000)) < 0)
-						error("did not receive any data");
-					printf("%s\n", connection2);
-
-					char connection3[10000];
-					bzero(connection3,sizeof(connection3));
-					if ((n = read(data_socket, connection3, 10000)) < 0)
-						error("did not receive any data");
-
-					FILE *fp;
-					if((fp = fopen("hello.txt","w"))!=NULL){
-						fprintf(fp,"%s",connection3);
-					}
-					fclose(fp);
-
-					char connection24[1000];
-					bzero(connection24,sizeof(connection24));
-					if ((n = read(socket_file_descriptor, connection24, 1000)) < 0)
-						error("did not receive any data");
-					printf("%s\n", connection24);
-
-
-					close(data_socket);
+					get_file(socket_file_descriptor,server,filename);
 
 				}else{
 					error("code 230 not received");
@@ -140,7 +95,7 @@ int main(int argc, char *argv[])
 		close(socket_file_descriptor);
 	
 	}else{
-			error("must provide host name");
+			error("USAGE : ./object_file your_ip_address");
 	}
 }
 
@@ -149,7 +104,6 @@ void error(char *error_message)
 	perror(error_message);
 	exit(1);
 }
-
 int create_socket(int port,struct hostent *server){
 	int socket_file_descriptor;
 	if((socket_file_descriptor = socket(AF_INET, SOCK_STREAM, 0)) < 0)
@@ -167,4 +121,125 @@ int create_socket(int port,struct hostent *server){
 		error("could not connect");
 	
 	return socket_file_descriptor;
+}
+int open_data_socket(int command_socket,struct hostent *server){
+	int data_socket;
+	char pasv[] = "PASV \r\n";
+	if (write(command_socket, pasv, strlen(pasv)) < 0)
+		error("did not send any data");
+
+	char response_227[60];
+	bzero(response_227,sizeof(response_227));
+
+	if (read(command_socket,response_227, 60) < 0)
+		error("did not receive any data");
+	printf("%s\n", response_227);
+
+	if(strncmp(response_227,"227",3)==0){
+		//227 Entering passive mode (192,168,1,66,237,109).
+		//above is a sample 227 response
+		//we are only interested in the last two numbers which give us the port to connect to
+		//in this case 237 and 109(stored in num5 and num6 respectively)
+		int num5;
+		int num6;
+		char s1[20];
+		int ptr;
+
+		sscanf(response_227,"%d %s %s %s (%d,%d,%d,%d,%d,%d)",&ptr,s1,s1,s1,&ptr,&ptr,&ptr,&ptr,&num5,&num6);
+		int extracted_port = (num5 * 256)+num6;
+
+		if ((data_socket = create_socket(extracted_port,server)) < 0)
+			error("could not create data socket");
+		return data_socket;
+	}
+
+	return -1;
+}
+void list_folder(int command_socket,struct hostent *server){
+
+	//open data socket first
+	int data_socket;
+	if((data_socket = open_data_socket(command_socket,server)) < 0)
+		error("could not open data socket");
+
+	char response_125[70];
+	bzero(response_125,sizeof(response_125));
+	char response_226[70];
+	bzero(response_226,sizeof(response_226));
+
+	char ls[]="LIST \r\n";
+	if(write(command_socket,ls,strlen(ls)) < 0)
+		error("could send list command");
+
+	
+	if(read(command_socket,response_125,70) < 0)
+		error("error in listing files");
+	printf("%s\n",response_125);
+
+
+	char folder_list[10000];
+	bzero(folder_list,sizeof(folder_list));
+
+	if(read(data_socket,folder_list,10000) < 0)
+		error("error in listing files");
+	close(data_socket);
+
+	if(read(command_socket,response_226,70) < 0)
+		error("did not get 226 transfer completed");
+	printf("%s\n",response_226);
+
+
+	printf("%s\n",folder_list);
+	
+}
+
+void get_file(int command_socket,struct hostent *server,char *filename){
+
+	//open data socket first
+	int data_socket;
+	if((data_socket = open_data_socket(command_socket,server)) < 0)
+		error("could not open data socket");
+
+	char retr[200]="RETR ";
+	strcat(retr,filename);
+	strcat(retr,"\r\n");
+
+	char response_125[100];
+	char response_226[100];
+	char filedata[10000];
+
+	bzero(response_125,sizeof(response_125));
+	bzero(response_226,sizeof(response_226));
+	bzero(filedata,sizeof(filedata));
+
+	if(write(command_socket,retr,strlen(retr)) < 0)
+		error("could not send retr command");
+
+	if(read(command_socket,response_125,100) < 0)
+		error("did not get 125 connection");
+	printf("%s\n",response_125);
+
+	
+	
+	if(read(data_socket,filedata,10000) < 0)
+		error("did not get receive the file data");
+	close(data_socket);
+
+	create_file(filename,filedata);
+
+
+	if(read(command_socket,response_226,100) < 0)
+		error("did not get 226 transfer completed");
+	printf("%s\n",response_226);
+
+}
+void create_file(char *filename,char *filecontents){
+
+	FILE *fp;
+	if((fp = fopen(filename,"w"))!=NULL){
+		fprintf(fp,filecontents,strlen(filecontents));
+	}else{
+		error("could not create file");
+	}
+	fclose(fp);
 }

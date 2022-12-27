@@ -12,7 +12,8 @@ int create_socket(int,struct hostent *);
 int open_data_socket(int,struct hostent *);
 void list_folder(int,struct hostent *);
 void get_file(int,struct hostent *,char *);
-void create_file(char *,char *);
+void create_file(char *,char *,int);
+void enter_file(char *,int);
 
 int main(int argc, char *argv[])
 {
@@ -79,7 +80,7 @@ int main(int argc, char *argv[])
 					printf("Enter file to retrieve\n");
 
 					char filename[100];
-					scanf("%s",filename);
+					enter_file(filename,100);
 
 					get_file(socket_file_descriptor,server,filename);
 
@@ -177,18 +178,39 @@ void list_folder(int command_socket,struct hostent *server){
 	printf("%s\n",response_125);
 
 
-	char folder_list[10000];
-	bzero(folder_list,sizeof(folder_list));
+	//we should keep reading until bytes read are 0
+	//i.e all bytes are read transfer is completed
+	//we keep adding storage as needed 
+	int BUFSIZE = 1024;
+	char *folder_list = (char *)malloc(sizeof(char) * BUFSIZE);
 
-	if(read(data_socket,folder_list,10000) < 0)
-		error("error in listing files");
-	close(data_socket);
+	int bytes_read;
+	int total_bytes=0;
+	int buffer_step = 1;
+
+	while(1){
+		if((bytes_read = read(data_socket,(folder_list + total_bytes),(BUFSIZE-total_bytes))) < 0)
+			error("error in listing files");
+		total_bytes += bytes_read;
+
+		if(bytes_read==0)
+			break;
+
+		//add memory if it was exceeded
+		if(total_bytes >= BUFSIZE){
+			buffer_step++;
+			BUFSIZE *= buffer_step;
+			folder_list = (char *)realloc(folder_list,BUFSIZE);
+		}
+
+	}
 
 	if(read(command_socket,response_226,70) < 0)
 		error("did not get 226 transfer completed");
 	printf("%s\n",response_226);
 
 
+	close(data_socket);
 	printf("%s\n",folder_list);
 	
 }
@@ -206,40 +228,70 @@ void get_file(int command_socket,struct hostent *server,char *filename){
 
 	char response_125[100];
 	char response_226[100];
-	char filedata[10000];
+	
 
 	bzero(response_125,sizeof(response_125));
 	bzero(response_226,sizeof(response_226));
-	bzero(filedata,sizeof(filedata));
 
 	if(write(command_socket,retr,strlen(retr)) < 0)
 		error("could not send retr command");
 
+	//code could be 125 for data connection already open
+	//code could also be 500 if the file entered does not exist
 	if(read(command_socket,response_125,100) < 0)
 		error("did not get 125 connection");
 	printf("%s\n",response_125);
 
 	
-	
-	if(read(data_socket,filedata,10000) < 0)
-		error("did not get receive the file data");
-	close(data_socket);
+	//we should keep reading until bytes read are 0
+	//i.e all bytes are read meaning transfer is completed
+	//we keep adding storage as needed 
+	int BUFSIZE = 1024;
+	char *filedata = (char *)malloc(sizeof(char) * BUFSIZE);
+	int total_bytes = 0;
+	int buffer_step = 1;
+	int bytes_read;
 
-	create_file(filename,filedata);
-
-
+	while(1){
+		if((bytes_read = read(data_socket,(filedata+total_bytes),BUFSIZE-total_bytes)) < 0)
+			error("did not read file data");
+		
+		if(bytes_read==0)
+			break;
+		total_bytes += bytes_read;
+		
+		//keep adding memory if overflowed
+		if(total_bytes >= BUFSIZE){
+			buffer_step++;
+			BUFSIZE *= buffer_step;
+			filedata=(char *)realloc(filedata,BUFSIZE);
+		}
+	}
 	if(read(command_socket,response_226,100) < 0)
 		error("did not get 226 transfer completed");
+	
 	printf("%s\n",response_226);
+	
+	create_file(filename,filedata,total_bytes);
+
+	free(filedata);
+	filedata=NULL;
+	close(data_socket);
+	
 
 }
-void create_file(char *filename,char *filecontents){
-
+void create_file(char *filename,char *filedata,int filesize){
 	FILE *fp;
-	if((fp = fopen(filename,"w"))!=NULL){
-		fprintf(fp,filecontents,strlen(filecontents));
-	}else{
-		error("could not create file");
+	if((fp = fopen(filename,"wb"))!=NULL){
+		fwrite(filedata,sizeof(char),filesize,fp);
 	}
-	fclose(fp);
+
+}
+
+void enter_file(char *filename,int max){
+	char *start = filename;
+	for(;(filename < (start+max)) && ((*filename = getchar()) != EOF) && *filename!='\n';filename++)
+		;
+
+	*filename = '\0';
 }

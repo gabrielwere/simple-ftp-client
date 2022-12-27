@@ -1,7 +1,7 @@
 ## SIMPLE PYFTPDLIB CLIENT
 
 A simple command line ftp client for `pyftpdlib server`.<br>
-The program was tested with `pyftpdlib 1.5.4`.<br>
+Tested with `pyftpdlib 1.5.4`.<br>
 
 ### USAGE
 
@@ -24,8 +24,14 @@ gcc client.c -o client
 
 ```
 The files and folders available will then be listed.<br>
+
 As of now,you cannot `cd` into/out of folders,so you will have to select a file from the ones in the current folder.<br>
 
+The file will then be added to your current directory.<br>
+
 Finally,I'm not a network programer so most of the code is rubbish as it does not account for the various scenarios that could happen when using the read/write commands to receive/send data.<br>
+
+Checks for failure when using dynamic memory allocation should also be included.<br>
+
 This was just a proof of concept and major improvements can be made to the code.<br>
 

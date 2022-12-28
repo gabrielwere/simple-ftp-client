@@ -10,7 +10,7 @@
 void error(char *);
 int create_socket(int,struct hostent *);
 int open_data_socket(int,struct hostent *);
-void list_folder(int,struct hostent *);
+void list_files(int,struct hostent *);
 void get_file(int,struct hostent *,char *);
 void create_file(char *,char *,int);
 void enter_file(char *,int);
@@ -18,9 +18,10 @@ void enter_file(char *,int);
 int main(int argc, char *argv[])
 {
 
+	int socket_file_descriptor;
+	int port = 21;
+
 	if(argc==2){
-		int socket_file_descriptor;
-		int port = 21;
 		struct hostent *server = gethostbyname(argv[1]);
 
 		if ((socket_file_descriptor = create_socket(port,server)) < 0)
@@ -47,7 +48,7 @@ int main(int argc, char *argv[])
 		bzero(response_227,sizeof(response_227));
 
 		if ((n = read(socket_file_descriptor, response_220, 60)) < 0)
-			error("did not receive any data");
+			error("did not receive 220");
 		printf("%s\n",response_220);
 		
 
@@ -56,10 +57,10 @@ int main(int argc, char *argv[])
 			//send username to the password
 			char username[] = "USER anonymous\r\n";
 			if ((n = write(socket_file_descriptor, username, strlen(username))) < 0)
-				error("did not send any data");
+				error("did not send username");
 
 			if ((n = read(socket_file_descriptor, response_331, 60)) < 0)
-				error("did not receive any data");
+				error("did not receive 331");
 			printf("%s\n", response_331);
 
 			// send password to server
@@ -68,17 +69,17 @@ int main(int argc, char *argv[])
 				//send password to the server
 				char password[] = "PASS \r\n";
 				if ((n = write(socket_file_descriptor, password, strlen(password))) < 0)
-					error("did not send any data");
+					error("did not send password");
 
 				if ((n = read(socket_file_descriptor, response_230, 60)) < 0)
-					error("did not receive any data");
+					error("did not receive 230");
 				printf("%s\n", response_230);
 
 				if(strncmp(response_230,"230",3)==0)
 				{
-					list_folder(socket_file_descriptor,server);
-					printf("Enter file to retrieve\n");
+					list_files(socket_file_descriptor,server);
 
+					printf("Enter file to retrieve\n");
 					char filename[100];
 					enter_file(filename,100);
 
@@ -93,11 +94,12 @@ int main(int argc, char *argv[])
 		}else{
 			error("code 220 not received");
 		}
-		close(socket_file_descriptor);
 	
 	}else{
 			error("USAGE : ./object_file your_ip_address");
 	}
+	close(socket_file_descriptor);
+	return 0;
 }
 
 void error(char *error_message)
@@ -156,7 +158,7 @@ int open_data_socket(int command_socket,struct hostent *server){
 
 	return -1;
 }
-void list_folder(int command_socket,struct hostent *server){
+void list_files(int command_socket,struct hostent *server){
 
 	//open data socket first
 	int data_socket;
@@ -182,8 +184,7 @@ void list_folder(int command_socket,struct hostent *server){
 	//i.e all bytes are read transfer is completed
 	//we keep adding storage as needed 
 	int BUFSIZE = 1024;
-	char *folder_list = (char *)malloc(sizeof(char) * BUFSIZE);
-
+	char *folder_list = (char *)malloc(BUFSIZE);
 	int bytes_read;
 	int total_bytes=0;
 	int buffer_step = 1;
@@ -209,9 +210,12 @@ void list_folder(int command_socket,struct hostent *server){
 		error("did not get 226 transfer completed");
 	printf("%s\n",response_226);
 
+	printf("%s\n",folder_list);
+	
 
 	close(data_socket);
-	printf("%s\n",folder_list);
+	free(folder_list);
+	folder_list=NULL;
 	
 }
 
@@ -228,10 +232,22 @@ void get_file(int command_socket,struct hostent *server,char *filename){
 
 	char response_125[100];
 	char response_226[100];
-	
+	char response_200[100];
 
 	bzero(response_125,sizeof(response_125));
 	bzero(response_226,sizeof(response_226));
+	bzero(response_200,sizeof(response_200));
+
+
+	//set transfer type to binary
+	char binary[] = "TYPE I\r\n";
+	if(write(command_socket,binary,strlen(binary)) < 0)
+		error("could not send type command");
+
+	if(read(command_socket,response_200,100) < 0)
+		error("did not get 125 connection");
+	printf("%s\n",response_200);
+	
 
 	if(write(command_socket,retr,strlen(retr)) < 0)
 		error("could not send retr command");
@@ -247,7 +263,7 @@ void get_file(int command_socket,struct hostent *server,char *filename){
 	//i.e all bytes are read meaning transfer is completed
 	//we keep adding storage as needed 
 	int BUFSIZE = 1024;
-	char *filedata = (char *)malloc(sizeof(char) * BUFSIZE);
+	char *filedata = (char *)malloc(BUFSIZE);
 	int total_bytes = 0;
 	int buffer_step = 1;
 	int bytes_read;
@@ -277,13 +293,14 @@ void get_file(int command_socket,struct hostent *server,char *filename){
 	free(filedata);
 	filedata=NULL;
 	close(data_socket);
-	
-
 }
 void create_file(char *filename,char *filedata,int filesize){
 	FILE *fp;
+	
 	if((fp = fopen(filename,"wb"))!=NULL){
-		fwrite(filedata,sizeof(char),filesize,fp);
+		fwrite(filedata,1,filesize,fp);
+		
+		fclose(fp);
 	}
 
 }

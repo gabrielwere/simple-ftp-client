@@ -6,7 +6,7 @@ Tested with `pyftpdlib 1.5.4`.<br>
 ### USAGE
 
 You need to have `python` and `pyftpdlib` installed first.<br> 
-On a linux machine,start `pyftpdlib`.
+On a linux machine,start `pyftpdlib` in the folder which has the file you wish to get.
 
 ```
 python3 -m pyftpdlib -p 21
